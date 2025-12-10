@@ -1,0 +1,113 @@
+#Code to replicate project
+
+#importing necessary libraries for analysis and mapping tools
+library(dplyr) #data analysis tools
+library(ggplot2) #mapping tools 
+library(corrplot) #correlation testing tools
+library(here) #allowing 'here' file access
+
+#set location to get files
+here::i_am("Final_Project-Enright.R")
+
+#loading in csvs containing data for analysis
+fare_evasion_data <- read.csv("MTA_NYCT_Subway_Fare_Evasion__Beginning_2018.csv")
+NYPD_summons_data <- read.csv("TABS_Summons.csv")
+NYPD_budget_data <- read.csv("NYPD Budget Increases - Sheet1.csv")
+NYPD_arrests_data <- read.csv("NYPD Fare Evasion Arrests - Sheet1.csv")
+
+
+#checking variable fields to see if they are appropriate for testing (numeric or integers)
+str(NYPD_budget_data$Budget) #numeric output
+str(NYPD_summons_data$Sum) #character output
+str(fare_evasion_data$Fare.Evasion) #numeric output
+str(NYPD_arrests_data$Arrests.Reported) #integers output
+
+#Cleaning steps for NYPD_Summons_data
+##Need to get rid of blanks/white spaces from the dataset using mutate to make changes 
+##within "Sum" columns
+NYPD_summons_cleaned <- NYPD_summons_data %>%
+  mutate(
+    Sum = trimws(as.character(Sum)),   # first, remove white space from rows 
+    Sum = na_if(Sum, ""),              # second, convert trimmed spaces into "NA" values
+    Sum = as.numeric(Sum)              # third, use mutate to convert to numeric to allow for correlation testing
+  ) 
+
+#Final cleaning step: Remove NAs and get equal number of rows for comparison testing
+NYPD_summons_cleaned <- na.omit(NYPD_summons_cleaned) 
+
+#confirm numeric string
+str(NYPD_summons_cleaned)
+
+#combining datasets via left_join function for testing
+combined_data <- left_join(fare_evasion_data,NYPD_budget_data, by = 'Time.Period')%>%
+  left_join(., NYPD_summons_cleaned, by = 'Time.Period')%>%
+  left_join(., NYPD_arrests_data, by = 'Time.Period')
+
+#renaming "Sum" column and removing extra columns for clarity
+combined_data <- combined_data%>%
+  mutate (Summons = Sum) %>%
+  select(Time.Period, Fare.Evasion, Budget, Arrests.Reported, Summons)
+
+#Correlation Tests to check significance and null hypothesis
+Budget_Evasion_Correlation <- cor.test(combined_data$Budget, combined_data$Fare.Evasion)
+print(Budget_Evasion_Correlation)
+
+Summons_Evasion_Correlation <- cor.test(combined_data$Summons, combined_data$Fare.Evasion)
+print(Summons_Evasion_Correlation)
+
+Arrests_Evasion_Correlation <- cor.test(combined_data$Arrests.Reported, combined_data$Fare.Evasion)
+print(Arrests_Evasion_Correlation)
+
+#Visualization 
+
+#Bar-Plots
+ggplot(combined_data, aes(x = Time.Period, y = Budget)) +
+  geom_bar(stat = "identity", fill = "darkblue") +
+  labs(title = "NYPD Transit Authority Bureau Budget by Year",
+       x = "Quarters",
+       y = "Budget") +
+  theme_minimal()
+
+ggplot(fare_evasion_data, aes(x = Time.Period, y = Fare.Evasion)) +
+  geom_bar(stat = "identity", fill ="darkgray")+
+  labs(title = "MTA evaluated Fare Evasion Rate",
+       x = "Quarters",
+       y = "Fare Evasion Rate") +
+  theme_minimal()
+
+ggplot(NYPD_arrests_data, aes(x = Time.Period, y = combined_data$Summons)) +
+  geom_bar(stat = "identity", fill ="purple")+
+  labs(title = "NYPD Summons Issued",
+       x = "Quarters",
+       y = "Summons Issued") +
+  theme_minimal()
+
+ggplot(NYPD_arrests_data, aes(x = Time.Period, y = combined_data$Arrests.Reported)) +
+  geom_bar(stat = "identity", fill ="red")+
+  labs(title = "NYPD Summons Issued",
+       x = "Quarters",
+       y = "Arrests") +
+  theme_minimal()
+
+#Individual Correlation Results Mapping 
+ggplot(combined_data, aes(Fare.Evasion, Summons)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(title = paste("Correlation =", round(cor(combined_data$Fare.Evasion,
+                                                combined_data$Budget,
+                                                use="complete.obs"), 3)))
+
+#Time.Period includes Characters cannot be mapped. Isolating numeric values
+numeric_data <- combined_data %>% select(where(is.numeric))
+
+#creating a correlation matrix
+corr_matrix <- cor(numeric_data, use = "complete.obs")
+
+#visualize with corrplot (from library)
+corrplot(corr_matrix, method = "color", tl.col = "black", addCoef.col = "black")
+
+#Simple Linear Regression test
+Simple_LR_Model <- lm(Fare.Evasion ~  Summons, data = combined_data)
+summary(Simple_LR_Model)
+
+
